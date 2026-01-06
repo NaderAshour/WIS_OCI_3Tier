@@ -1,0 +1,86 @@
+# Check line endings
+cat -e ~/.ssh/id_rsa.pub           # Should end with $ (not ^M$)
+
+# Fix Windows line endings
+sed -i 's/\r$//' ~/.ssh/id_rsa.pub
+dos2unix ~/.ssh/id_rsa.pub
+
+
+
+# List state
+terraform state list
+
+# Remove from state (without destroying)
+terraform state rm oci_core_instance.jump_host
+
+# Force recreate
+terraform taint oci_core_instance.jump_host
+
+# Import existing resource
+terraform import oci_core_instance.jump_host <instance_ocid>
+
+
+
+
+
+#  Initialize with remote backend
+terraform init -migrate-state
+
+#  Verify migration
+terraform state list
+
+
+
+# List all instances
+oci compute instance list --compartment-id <compartment_ocid> --query "data[*].{Name:'display-name', State:'lifecycle-state', IP:'private-ip'}" --output table
+
+# Get instance details
+oci compute instance get --instance-id <instance_ocid> --query "data.{Name:'display-name', State:'lifecycle-state', IP:'private-ip'}"
+
+# Console logs
+oci compute instance get-console-content --instance-id <instance_ocid> --length 100
+
+# Reboot
+oci compute instance action --instance-id <instance_ocid> --action SOFTRESET
+
+
+
+
+# Create session
+oci bastion session create \
+  --bastion-id <bastion_ocid> \
+  --session-ttl-in-seconds 1800 \
+  --target-resource-details '{"sessionType":"SSH","targetResourceId":"<instance_ocid>","targetResourcePort":22,"targetResourceOperatingSystemUserName":"opc","sshPublicKey":"'"$(cat ~/.ssh/id_rsa.pub)"'"}'
+
+# List sessions
+oci bastion session list --bastion-id <bastion_ocid> --query "data[?\"lifecycle-state\"=='ACTIVE'].{ID:id, Name:\"display-name\", Target:\"target-resource-details\".\"target-resource-private-ip-address\"}" --output table
+
+# Delete session
+oci bastion session delete --session-id <session_ocid> --force
+
+# Delete all sessions
+oci bastion session list --bastion-id <bastion_ocid> --query "data[?\"lifecycle-state\"=='ACTIVE'].id" --raw-output | xargs -I {} oci bastion session delete --session-id {} --force
+
+# Terminal 1: Create tunnel
+ssh -i ~/.ssh/id_rsa -N -L 2222:<instance_ip>:22 -p 22 <session_id>@host.bastion.<region>.oci.oraclecloud.com
+
+# Terminal 2: Connect
+ssh -i ~/.ssh/id_rsa opc@localhost -p 2222
+ssh -vvv -i ~/.ssh/id_rsa opc@localhost -p 2222 #for debugging
+
+
+
+# List VCNs & subnets
+oci network vcn list --compartment-id <compartment_ocid>
+oci network subnet list --compartment-id <compartment_ocid>
+
+# Get VNIC info
+oci compute instance list-vnics --instance-id <instance_ocid> --query "data[0].{'PrivateIP':'private-ip', 'State':'lifecycle-state'}"
+
+
+
+# PowerShell
+Test-NetConnection -ComputerName <ip> -Port 22
+
+# Bash
+timeout 2 bash -c "cat < /dev/null > /dev/tcp/<ip>/22" && echo "Open" || echo "Closed"

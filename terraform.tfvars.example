@@ -1,0 +1,12 @@
+# Copy this file to terraform.tfvars and fill in your values
+# DO NOT commit terraform.tfvars to version control
+
+# OCI Authentication
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxxx"
+user_ocid        = "ocid1.user.oc1..xxxxx"
+fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+private_key      = "/path/to/your/oci_api_key.pem"
+region           = "me-jeddah-1"
+
+# SSH Key
+ssh_public_key_path = "/path/to/your/ssh_key.pub"
