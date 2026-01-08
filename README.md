@@ -1,8 +1,8 @@
-# OCI 3-Tier Application Infrastructure
-
 This Terraform project provisions a secure 3-tier application infrastructure on Oracle Cloud Infrastructure (OCI) with remote state management.
 
 ## Architecture Overview
+
+<img width="4253" height="2427" alt="Picture3" src="https://github.com/user-attachments/assets/ff4f2a9a-0446-4cff-b66a-558c584fc8c2" />
 
 - **Frontend Tier**: Web servers in private subnet
 - **Backend Tier**: Application servers in private subnet  
