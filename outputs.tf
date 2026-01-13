@@ -41,7 +41,7 @@ output "bastion_session_command" {
         "targetResourceId": "${oci_core_instance.jump_host.id}",
         "targetResourcePort": 22,
         "targetResourceOperatingSystemUserName": "opc",
-        "sshPublicKey": "'"$PUB_KEY"'"
+        "sshPublicKey": $PUB_KEY
       }'
 
     

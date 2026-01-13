@@ -6,6 +6,12 @@ resource "oci_core_instance" "jump_host" {
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
   shape          = var.compute_shape
 
+  
+  #shape_config {
+  #  ocpus         = var.ocpus
+  #  memory_in_gbs = var.memory_in_gbs
+  #}
+
   create_vnic_details {
     subnet_id = oci_core_subnet.frontend_subnet.id
     nsg_ids   = [oci_core_network_security_group.jump_host_nsg.id]
@@ -18,51 +24,7 @@ resource "oci_core_instance" "jump_host" {
   }
 
   metadata = {
-    ssh_authorized_keys = file(var.ssh_public_key_path)
-    
-    user_data = base64encode(<<-EOF
-      #!/bin/bash
-      echo "=== Starting cloud-init configuration ==="
-      
-      # Update system
-      yum update -y
-      
-      # Ensure SSH server is installed and running
-      if ! rpm -q openssh-server; then
-        echo "Installing openssh-server..."
-        yum install -y openssh-server
-      fi
-      
-      # Start SSH service
-      systemctl start sshd
-      systemctl enable sshd
-      
-      # Configure SSH
-      echo "Configuring SSH..."
-      sed -i 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-      sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
-      
-      # Restart SSH
-      systemctl restart sshd
-      
-      # Configure firewall if active
-      if command -v firewall-cmd &> /dev/null && systemctl is-active --quiet firewalld; then
-        echo "Configuring firewall..."
-        firewall-cmd --permanent --add-service=ssh
-        firewall-cmd --reload
-      fi
-      
-      # Create test file
-      echo "Cloud-init completed at $(date)" > /home/opc/cloud-init-success.txt
-      chown opc:opc /home/opc/cloud-init-success.txt
-      
-      # Set proper permissions for SSH directory
-      mkdir -p /home/opc/.ssh
-      chmod 700 /home/opc/.ssh
-      
-      echo "=== Cloud-init completed successfully ==="
-      EOF
-    )
+    ssh_authorized_keys = trimspace(file(var.ssh_public_key_path))
 
   }
   
@@ -78,8 +40,8 @@ resource "oci_core_instance" "frontend_instance" {
   compartment_id = oci_identity_compartment.wis_compartment.id
   display_name   = "frontend-instance"
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
-  shape          =  var.compute_shape
-
+  #shape          =  var.compute_shape
+  shape          = "VM.Standard.E3.Flex"
   #shape_config {
   #  ocpus         = var.ocpus
   #  memory_in_gbs = var.memory_in_gbs
@@ -97,7 +59,7 @@ resource "oci_core_instance" "frontend_instance" {
   }
 
   metadata = {
-    ssh_authorized_keys = file(var.ssh_public_key_path)
+    ssh_authorized_keys = trimspace(file(var.ssh_public_key_path))
   }
 
   depends_on = [
@@ -111,11 +73,11 @@ resource "oci_core_instance" "backend_instance" {
   compartment_id = oci_identity_compartment.wis_compartment.id
   display_name   = "backend-instance"
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
-  shape          = "VM.Standard.E2.1.Micro"
+  shape          = "VM.Standard.E3.Flex"
 
   shape_config {
-    ocpus         = var.ocpus
-    memory_in_gbs = var.memory_in_gbs
+    ocpus         = 2
+    memory_in_gbs = 4
   }
 
   create_vnic_details {
@@ -130,7 +92,7 @@ resource "oci_core_instance" "backend_instance" {
   }
 
   metadata = {
-    ssh_authorized_keys = file(var.ssh_public_key_path)
+    ssh_authorized_keys = trimspace(file(var.ssh_public_key_path))
   }
 
   depends_on = [
@@ -144,11 +106,11 @@ resource "oci_core_instance" "db_instance" {
   compartment_id = oci_identity_compartment.wis_compartment.id
   display_name   = "db-instance"
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
-  shape          = "VM.Standard.E2.1.Micro"
+  shape          = "VM.Standard.E3.Flex"
 
   shape_config {
-    ocpus         = var.ocpus
-    memory_in_gbs = var.memory_in_gbs
+    ocpus         = 2
+    memory_in_gbs = 4
   }
 
   create_vnic_details {
@@ -163,7 +125,7 @@ resource "oci_core_instance" "db_instance" {
   }
 
   metadata = {
-    ssh_authorized_keys = file(var.ssh_public_key_path)
+    ssh_authorized_keys = trimspace(file(var.ssh_public_key_path))
   }
 
   depends_on = [
@@ -258,26 +220,26 @@ resource "oci_bastion_bastion" "wis_bastion" {
 # and to create a session u could do that with help of outputs.tf via "bastion_session_command"
 
 
-# resource "oci_bastion_session" "jump_host_session" {
-#   bastion_id  = oci_bastion_bastion.wis_bastion.id
-#   display_name = "jump-host-session"
+resource "oci_bastion_session" "jump_host_session" {
+  bastion_id  = oci_bastion_bastion.wis_bastion.id
+  display_name = "jump-host-session-by-TF-apply"
   
-#   target_resource_details {
-#     target_resource_id = oci_core_instance.jump_host.id
-#     target_resource_port = 22
-#     session_type = "PORT_FORWARDING"
-#     target_resource_private_ip_address = oci_core_instance.jump_host.private_ip
-#   } 
+  target_resource_details {
+    target_resource_id = oci_core_instance.jump_host.id
+    target_resource_port = 22
+    session_type = "PORT_FORWARDING"
+    target_resource_private_ip_address = oci_core_instance.jump_host.private_ip
+  } 
     
-#     key_details {
-#     public_key_content = file(var.ssh_public_key_path)
+    key_details {
+    public_key_content = trimspace(file(var.ssh_public_key_path))
     
-#   }
+  }
 
-#   session_ttl_in_seconds = 10800
+  session_ttl_in_seconds = 10800
 
-#   depends_on = [
-#     oci_bastion_bastion.wis_bastion,
-#     oci_core_instance.jump_host
-#   ]
-# }
+  depends_on = [
+    oci_bastion_bastion.wis_bastion,
+    oci_core_instance.jump_host
+  ]
+}
