@@ -142,8 +142,8 @@ resource "oci_core_network_security_group_security_rule" "lb_to_frontend" {
 
   tcp_options {
     destination_port_range {
-      min = 80
-      max = 80
+      min = 8080
+      max = 8081
     }
   }
 
@@ -171,8 +171,8 @@ resource "oci_core_network_security_group_security_rule" "frontend_from_lb" {
 
   tcp_options {
     destination_port_range {
-      min = 80
-      max = 80
+      min = 8080
+      max = 8081
     }
   }
 
@@ -198,7 +198,7 @@ resource "oci_core_network_security_group_security_rule" "frontend_ssh_jump" {
   description = "SSH from Jump Host"
 }
 
-# To Backend
+# To Backend (API)
 resource "oci_core_network_security_group_security_rule" "frontend_to_backend" {
   network_security_group_id = oci_core_network_security_group.frontend_nsg.id
   direction                 = "EGRESS"
@@ -215,6 +215,25 @@ resource "oci_core_network_security_group_security_rule" "frontend_to_backend" {
   }
 
   description = "API calls to Backend"
+}
+
+# To Backend (Redis)
+resource "oci_core_network_security_group_security_rule" "frontend_to_backend_redis" {
+  network_security_group_id = oci_core_network_security_group.frontend_nsg.id
+  direction                 = "EGRESS"
+  protocol                  = "6"
+
+  destination      = oci_core_network_security_group.backend_nsg.id
+  destination_type = "NETWORK_SECURITY_GROUP"
+
+  tcp_options {
+    destination_port_range {
+      min = 6379
+      max = 6379
+    }
+  }
+
+  description = "Redis connections to Backend"
 }
 
 # Internet through NAT
@@ -236,6 +255,25 @@ resource "oci_core_network_security_group_security_rule" "frontend_egress_intern
   description = "Outbound internet via NAT"
 }
 
+# To Database (PostgreSQL) - for Result service
+resource "oci_core_network_security_group_security_rule" "frontend_to_db" {
+  network_security_group_id = oci_core_network_security_group.frontend_nsg.id
+  direction                 = "EGRESS"
+  protocol                  = "6"
+
+  destination      = oci_core_network_security_group.db_nsg.id
+  destination_type = "NETWORK_SECURITY_GROUP"
+
+  tcp_options {
+    destination_port_range {
+      min = 5432
+      max = 5432
+    }
+  }
+
+  description = "PostgreSQL connections for Result service"
+}
+
 # Backend NSG
 resource "oci_core_network_security_group" "backend_nsg" {
   compartment_id = oci_identity_compartment.wis_compartment.id
@@ -246,7 +284,7 @@ resource "oci_core_network_security_group" "backend_nsg" {
   ]
 }
 
-# From Frontend
+# From Frontend (API)
 resource "oci_core_network_security_group_security_rule" "backend_from_frontend" {
   network_security_group_id = oci_core_network_security_group.backend_nsg.id
   direction                 = "INGRESS"
@@ -263,6 +301,25 @@ resource "oci_core_network_security_group_security_rule" "backend_from_frontend"
   }
 
   description = "Requests from Frontend"
+}
+
+# From Frontend (Redis)
+resource "oci_core_network_security_group_security_rule" "backend_from_frontend_redis" {
+  network_security_group_id = oci_core_network_security_group.backend_nsg.id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+
+  source      = oci_core_network_security_group.frontend_nsg.id
+  source_type = "NETWORK_SECURITY_GROUP"
+
+  tcp_options {
+    destination_port_range {
+      min = 6379
+      max = 6379
+    }
+  }
+
+  description = "Redis connections from Frontend"
 }
 
 # SSH from Jump Host
@@ -284,7 +341,7 @@ resource "oci_core_network_security_group_security_rule" "backend_ssh_jump" {
   description = "SSH from Jump Host"
 }
 
-# To DB
+# To DB (PostgreSQL)
 resource "oci_core_network_security_group_security_rule" "backend_to_db" {
   network_security_group_id = oci_core_network_security_group.backend_nsg.id
   direction                 = "EGRESS"
@@ -295,12 +352,12 @@ resource "oci_core_network_security_group_security_rule" "backend_to_db" {
 
   tcp_options {
     destination_port_range {
-      min = 3306
-      max = 3306
+      min = 5432
+      max = 5432
     }
   }
 
-  description = "DB connections"
+  description = "PostgreSQL connections"
 }
 
 # Database NSG
@@ -313,7 +370,7 @@ resource "oci_core_network_security_group" "db_nsg" {
   ]
 }
 
-# From Backend
+# From Backend (PostgreSQL)
 resource "oci_core_network_security_group_security_rule" "db_from_backend" {
   network_security_group_id = oci_core_network_security_group.db_nsg.id
   direction                 = "INGRESS"
@@ -324,12 +381,31 @@ resource "oci_core_network_security_group_security_rule" "db_from_backend" {
 
   tcp_options {
     destination_port_range {
-      min = 3306
-      max = 3306
+      min = 5432
+      max = 5432
     }
   }
 
-  description = "Database access from Backend"
+  description = "PostgreSQL access from Backend"
+}
+
+# From Frontend (PostgreSQL) - for Result service
+resource "oci_core_network_security_group_security_rule" "db_from_frontend" {
+  network_security_group_id = oci_core_network_security_group.db_nsg.id
+  direction                 = "INGRESS"
+  protocol                  = "6"
+
+  source      = oci_core_network_security_group.frontend_nsg.id
+  source_type = "NETWORK_SECURITY_GROUP"
+
+  tcp_options {
+    destination_port_range {
+      min = 5432
+      max = 5432
+    }
+  }
+
+  description = "PostgreSQL access from Frontend (Result service)"
 }
 
 # SSH from Jump Host

@@ -42,10 +42,10 @@ resource "oci_core_instance" "frontend_instance" {
   availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
   #shape          =  var.compute_shape
   shape          = "VM.Standard.E3.Flex"
-  #shape_config {
-  #  ocpus         = var.ocpus
-  #  memory_in_gbs = var.memory_in_gbs
-  #}
+  shape_config {
+    ocpus         = 2
+    memory_in_gbs = 4
+  }
 
   create_vnic_details {
     subnet_id = oci_core_subnet.frontend_subnet.id
@@ -140,9 +140,11 @@ resource "oci_core_instance" "db_instance" {
 resource "oci_load_balancer_load_balancer" "public_lb" {
   compartment_id = oci_identity_compartment.wis_compartment.id
   display_name   = "WIS-Public-LB"
+  count = var.enable_load_balancer ? 1 : 0
   shape          = "flexible"
 
   subnet_ids = [oci_core_subnet.lb_subnet.id]
+  network_security_group_ids = [oci_core_network_security_group.lb_nsg.id]
 
   shape_details {
     minimum_bandwidth_in_mbps = 10
@@ -156,49 +158,110 @@ resource "oci_load_balancer_load_balancer" "public_lb" {
 }
 
 
-# Load Balancer Backend Set
-
-resource "oci_load_balancer_backend_set" "frontend_backend_set" {
-  
-  name             = "frontend-backend-set"
-  load_balancer_id = oci_load_balancer_load_balancer.public_lb.id
+# Load Balancer Backend Set - Vote Service (8080)
+resource "oci_load_balancer_backend_set" "vote_backend_set" {
+  name             = "vote-backend-set"
+  count            = var.enable_load_balancer ? 1 : 0
+  load_balancer_id = oci_load_balancer_load_balancer.public_lb[0].id
   policy           = "ROUND_ROBIN"
 
   health_checker {
     protocol = "HTTP"
-    port     = 80
+    port     = 8080
     url_path = "/"
   }
 
   depends_on = [oci_load_balancer_load_balancer.public_lb]
 }
 
+# Load Balancer Backend Set - Result Service (8081)
+resource "oci_load_balancer_backend_set" "result_backend_set" {
+  name             = "result-backend-set"
+  count            = var.enable_load_balancer ? 1 : 0
+  load_balancer_id = oci_load_balancer_load_balancer.public_lb[0].id
+  policy           = "ROUND_ROBIN"
 
-# Load Balancer Backend
+  health_checker {
+    protocol = "HTTP"
+    port     = 8081
+    url_path = "/"
+  }
 
-resource "oci_load_balancer_backend" "frontend_backend" {
-  load_balancer_id = oci_load_balancer_load_balancer.public_lb.id
-  backendset_name = oci_load_balancer_backend_set.frontend_backend_set.name
+  depends_on = [oci_load_balancer_load_balancer.public_lb]
+}
+
+# Load Balancer Backend - Vote Service
+resource "oci_load_balancer_backend" "vote_backend" {
+  count            = var.enable_load_balancer ? 1 : 0
+  load_balancer_id = oci_load_balancer_load_balancer.public_lb[0].id
+  backendset_name  = oci_load_balancer_backend_set.vote_backend_set[0].name
   ip_address       = oci_core_instance.frontend_instance.private_ip
-  port             = 80
+  port             = 8080
   weight           = 1
 
   depends_on = [
     oci_core_instance.frontend_instance,
-    oci_load_balancer_backend_set.frontend_backend_set
+    oci_load_balancer_backend_set.vote_backend_set[0]
   ]
 }
 
-# Load Balancer Listener
-resource "oci_load_balancer_listener" "http_listener" {
-  
-  load_balancer_id = oci_load_balancer_load_balancer.public_lb.id
-  name             = "http-listener"
-  default_backend_set_name = oci_load_balancer_backend_set.frontend_backend_set.name
-  port             = 80
-  protocol         = "HTTP"
+# Load Balancer Backend - Result Service
+resource "oci_load_balancer_backend" "result_backend" {
+  count            = var.enable_load_balancer ? 1 : 0
+  load_balancer_id = oci_load_balancer_load_balancer.public_lb[0].id
+  backendset_name  = oci_load_balancer_backend_set.result_backend_set[0].name
+  ip_address       = oci_core_instance.frontend_instance.private_ip
+  port             = 8081
+  weight           = 1
 
-  depends_on = [oci_load_balancer_backend_set.frontend_backend_set]
+  depends_on = [
+    oci_core_instance.frontend_instance,
+    oci_load_balancer_backend_set.result_backend_set[0]
+  ]
+}
+
+# Path-based Routing Policy
+resource "oci_load_balancer_path_route_set" "path_routes" {
+  count            = var.enable_load_balancer ? 1 : 0
+  load_balancer_id = oci_load_balancer_load_balancer.public_lb[0].id
+  name             = "path-routing"
+
+  path_routes {
+    backend_set_name = oci_load_balancer_backend_set.vote_backend_set[0].name
+    path             = "/vote"
+    path_match_type {
+      match_type = "PREFIX_MATCH"
+    }
+  }
+
+  path_routes {
+    backend_set_name = oci_load_balancer_backend_set.result_backend_set[0].name
+    path             = "/result"
+    path_match_type {
+      match_type = "PREFIX_MATCH"
+    }
+  }
+
+  depends_on = [
+    oci_load_balancer_backend_set.vote_backend_set,
+    oci_load_balancer_backend_set.result_backend_set
+  ]
+}
+
+# Load Balancer Listener with Path-based Routing
+resource "oci_load_balancer_listener" "http_listener" {
+  count                    = var.enable_load_balancer ? 1 : 0
+  load_balancer_id         = oci_load_balancer_load_balancer.public_lb[0].id
+  name                     = "http-listener"
+  default_backend_set_name = oci_load_balancer_backend_set.vote_backend_set[0].name
+  port                     = 80
+  protocol                 = "HTTP"
+  path_route_set_name      = oci_load_balancer_path_route_set.path_routes[0].name
+
+  depends_on = [
+    oci_load_balancer_backend_set.vote_backend_set[0],
+    oci_load_balancer_path_route_set.path_routes[0]
+  ]
 }
 
 # OCI Bastion
@@ -220,26 +283,26 @@ resource "oci_bastion_bastion" "wis_bastion" {
 # and to create a session u could do that with help of outputs.tf via "bastion_session_command"
 
 
-resource "oci_bastion_session" "jump_host_session" {
-  bastion_id  = oci_bastion_bastion.wis_bastion.id
-  display_name = "jump-host-session-by-TF-apply"
+# resource "oci_bastion_session" "jump_host_session" {
+#   bastion_id  = oci_bastion_bastion.wis_bastion.id
+#   display_name = "jump-host-session-by-TF-apply"
   
-  target_resource_details {
-    target_resource_id = oci_core_instance.jump_host.id
-    target_resource_port = 22
-    session_type = "PORT_FORWARDING"
-    target_resource_private_ip_address = oci_core_instance.jump_host.private_ip
-  } 
+#   target_resource_details {
+#     target_resource_id = oci_core_instance.jump_host.id
+#     target_resource_port = 22
+#     session_type = "PORT_FORWARDING"
+#     target_resource_private_ip_address = oci_core_instance.jump_host.private_ip
+#   } 
     
-    key_details {
-    public_key_content = trimspace(file(var.ssh_public_key_path))
+#     key_details {
+#     public_key_content = trimspace(file(var.ssh_public_key_path))
     
-  }
+#   }
 
-  session_ttl_in_seconds = 10800
+#   session_ttl_in_seconds = 10800
 
-  depends_on = [
-    oci_bastion_bastion.wis_bastion,
-    oci_core_instance.jump_host
-  ]
-}
+#   depends_on = [
+#     oci_bastion_bastion.wis_bastion,
+#     oci_core_instance.jump_host
+#   ]
+# }

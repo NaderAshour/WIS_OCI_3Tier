@@ -3,7 +3,7 @@ output "vcn_id" {
 }
 
 output "load_balancer_public_ip" {
-  value = oci_load_balancer_load_balancer.public_lb.ip_address_details[0].ip_address
+  value = var.enable_load_balancer ? oci_load_balancer_load_balancer.public_lb[0].ip_address_details[0].ip_address : "Load Balancer is not enabled"
 }
 
 output "frontend_private_ip" {

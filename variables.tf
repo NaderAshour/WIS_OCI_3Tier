@@ -55,3 +55,8 @@ variable "ssh_public_key_path" {
   type        = string
 }
 
+variable "enable_load_balancer" {
+  type    = bool
+  default = false
+}
+
